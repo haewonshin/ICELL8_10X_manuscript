@@ -1,0 +1,63 @@
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(harmony)
+library(Matrix)
+library(pheatmap)
+
+```
+
+# Start with Seurat object
+```{r}
+query_icell <- readRDS("/storage2/fs1/klavine/Active/Haewon/nicm_donor/ref_mapping/query_icell.rds")
+query_10x <- readRDS("/storage2/fs1/klavine/Active/Haewon/nicm_donor/ref_mapping/query_10x.rds")
+```
+
+# Get average prediction score
+```{r}
+meta <- query_icell@meta.data
+
+avg.scores <- meta %>%
+  group_by(predicted.celltype) %>%
+  summarise(
+    mean_score = mean(predicted.celltype.score, na.rm = TRUE),
+    sd_score = sd(predicted.celltype.score, na.rm = TRUE),
+    n_cells = n()
+  )
+
+#write.csv(accuracy_table, "./refmap/mapping_accuracy_10X.csv", row.names = FALSE)
+
+# Mapping accuracy
+
+accuracy_table <- meta %>%
+  group_by(annot_fig) %>%
+  summarise(
+    n_cells = n(),
+    correctly_predicted = sum(predicted.celltype == annot_fig),
+    fraction_correct = correctly_predicted / n_cells
+  )
+
+#write.csv(avg.scores, file = "./refmap/avg_prediction_scores_per_celltype_10X.csv", row.names = FALSE)
+```
+
+# Confusion matrix
+```{r}
+conf.mat <- table(
+  True = meta$annot_fig,
+  Predicted = meta$predicted.celltype
+)
+conf.norm <- prop.table(conf.mat, 1)
+```
+
+```{r}
+p <- pheatmap(
+  conf.norm,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  display_numbers = TRUE,
+  number_format = "%.2f"
+)
+```
+

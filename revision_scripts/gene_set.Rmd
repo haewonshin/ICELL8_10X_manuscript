@@ -1,0 +1,36 @@
+```{r}
+library(msigdbr)
+library(clusterProfiler)
+library(enrichplot)
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+```
+
+# Load in DE genes
+```{r}
+de <- read.csv("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/common_fibroblast.csv", header = TRUE, row.names = 1) # Import genes
+
+gene_df <- bitr(de$x,
+                fromType="SYMBOL",
+                toType="ENTREZID",
+                OrgDb=org.Hs.eg.db)
+```
+
+```{r}
+hallmark <- msigdbr(species = "Homo sapiens", category = "H")
+
+enrich <- enricher(
+  gene = gene_df$ENTREZID,
+  TERM2GENE = hallmark[, c("gs_name","entrez_gene")],
+  pvalueCutoff = 0.1
+)
+```
+
+```{r}
+p1 <- dotplot(enrich, showCategory = 15)
+ggsave("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/gene_set/hallmark_common_fibroblast.png", plot = p1, width = 10, height = 6, dpi = 300)
+```
+
+
+

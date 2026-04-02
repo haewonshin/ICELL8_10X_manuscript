@@ -1,0 +1,59 @@
+---
+title: "doublet_detection.Rmd"
+output: Use scDblFinder to find doublet percentage from raw count objects
+author: Haewon Shin
+---
+
+
+```{r}
+library(Seurat)
+library(dplyr)
+library(harmony)
+library(SingleCellExperiment)
+library(scDblFinder)
+```
+```{r}
+x <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/10x/objects/preQC.rds")
+icell <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/icell/objects/preQC.rds")
+```
+
+```{r}
+# Find doublets in pre-QC objects
+set.seed(123)
+sce_10x <- as.SingleCellExperiment(x)
+colData(sce_10x)$sample_id <- x$sample
+sce_10x <- scDblFinder(sce_10x, samples="sample_id")
+
+table(sce_10x$scDblFinder.class)
+# singlet doublet 
+#  67536    8271 
+
+# Find threshold
+metadata(sce_10x)$scDblFinder.param
+```
+```{r}
+# Try in ICELL for fun
+set.seed(123)
+sce_icell <- as.SingleCellExperiment(icell)
+colData(sce_icell)$sample_id <- icell$sample
+sce_icell <- scDblFinder(sce_icell, samples="sample_id")
+
+table(sce_icell$scDblFinder.class)
+# singlet doublet 
+# 11681     718 
+```
+
+```{r}
+# Find doublets in post-QC 10X object
+x <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/10x/objects/global_0.5.rds")
+set.seed(123)
+sce_10x <- as.SingleCellExperiment(x)
+colData(sce_10x)$sample_id <- x$sample
+sce_10x <- scDblFinder(sce_10x, samples="sample_id")
+
+table(sce_10x$scDblFinder.class)
+
+# singlet doublet 
+#  64023    5189 
+```
+

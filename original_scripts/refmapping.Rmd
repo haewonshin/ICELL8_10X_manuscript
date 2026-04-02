@@ -1,0 +1,207 @@
+---
+title: "refmapping.Rmd"
+output: Reference map ICELL dataset onto 10X and vice versa; plot prediction scores on UMAP
+author: Haewon Shin
+---
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(ggplot2)
+library(harmony)
+library(showtext)
+```
+```{r}
+# Set memory limit first
+mem.maxVSize()
+new_max_vsize <- 1024 * 1024 * 1024 * 1024  
+mem.maxVSize(new_max_vsize)
+options(future.globals.maxSize = 8000*1024^2)
+```
+```{r}
+query <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/icell/objects/global_withfiglabels.rds")
+ref <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/10x/objects/global_withfiglabels.rds")
+```
+```{r}
+colors_icell <- c(
+  "#332288", "#117733", "#44AA99", "#88CCEE", "#DDCC77",
+  "#CC6677", "#AA4499", "#882255", "#661100", "#6699CC", "#888888"
+)
+
+colors_x <- c(
+  "#332288", # cm
+  "#117733", # endocardial
+  "#44AA99", # endothelial
+  "#88CCEE", # fibro
+  "#DDCC77", # lymphatic
+  "#CC6677", # mac
+  "#AA4499", # mast cell
+  "#882255", # monocyte
+  "#F98400", # neutrophil
+  "#661100", # pericyte
+  "#6699CC", # proliferating
+  "#1F78B4", # smc
+  "#888888" # t cell
+)
+```
+```{r}
+font_add_google("Source Sans Pro", "ssp")  # "ssp" is the alias
+showtext_auto()
+```
+
+
+```{r}
+# Fix the reference - global_withfiglabels was subsetted but had old UMAP coordinates
+ref <- RunUMAP(ref, reduction = "harmony", dims = 1:100, return.model=TRUE)
+```
+
+```{r}
+anchors <- FindTransferAnchors(
+  reference = ref,
+  query = query,
+  normalization.method = "SCT",
+  reference.reduction = "pca",
+  dims = 1:100
+)
+
+query <- MapQuery (
+  anchorset = anchors,
+  query = query,
+  reference = ref,
+  refdata = list(
+    celltype = "annot_fig"
+  ),
+  reference.reduction = "pca", 
+  reduction.model = "umap"
+)
+```
+```{r}
+# UMAP of annotated global object
+umap <- DimPlot(query, repel = TRUE, reduction = "ref.umap", group.by = "predicted.celltype", cols = colors_x) +
+  theme(text = element_text(family = "ssp"),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_blank()) +
+        guides(color = guide_legend(override.aes = list(shape = 15, size = 6))) +
+        NoLegend()
+
+label_coords <- umap$data %>%
+  group_by(predicted.celltype) %>%
+  summarize(UMAP_1 = median(refUMAP_1), UMAP_2 = median(refUMAP_2))
+
+label_coords <- label_coords %>%
+  mutate(UMAP_2 = UMAP_2 + 2)  # move labels up a bit
+
+umap <- umap + geom_text(data = label_coords, aes(x = UMAP_1, y = UMAP_2, label = predicted.celltype), size = 12)
+
+ggsave(file.path("./ref_mapping/figures/icell_onto_10x_umap.png"), plot = umap, width = 3.5, height = 3, dpi = 600)
+```
+
+# DO NOT USE HARMONY FOR THE REDUCTION
+
+```{r}
+# Switch query and reference
+q <- ref
+r <- query
+```
+
+```{r}
+# Fix the reference - global_withfiglabels was subsetted but had old UMAP coordinates
+r <- RunUMAP(r, reduction = "harmony", dims = 1:100, return.model=TRUE)
+```
+```{r}
+a <- FindTransferAnchors(
+  reference = r,
+  query = q,
+  normalization.method = "SCT",
+  reference.reduction = "pca",
+  dims = 1:100
+)
+
+query <- MapQuery(
+  anchorset = a,
+  query = q,
+  reference = r,
+  refdata = list(
+    celltype = "annot_fig"
+  ),
+  reference.reduction = "pca", 
+  reduction.model = "umap"
+)
+```
+
+
+```{r}
+# UMAP of annotated global object
+umap <- DimPlot(query, repel = TRUE, reduction = "ref.umap", group.by = "predicted.celltype", cols = colors_icell) +
+  theme(text = element_text(family = "ssp"),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_blank()) +
+        guides(color = guide_legend(override.aes = list(shape = 15, size = 6))) +
+        NoLegend()
+
+label_coords <- umap$data %>%
+  group_by(predicted.celltype) %>%
+  summarize(UMAP_1 = median(refUMAP_1), UMAP_2 = median(refUMAP_2))
+
+label_coords <- label_coords %>%
+  mutate(UMAP_2 = UMAP_2 + 2)  # move labels up a bit
+
+umap <- umap + geom_text(data = label_coords, aes(x = UMAP_1, y = UMAP_2, label = predicted.celltype), size = 12)
+
+ggsave(file.path("./ref_mapping/figures/10x_onto_icell_umap.png"), plot = umap, width = 3.5, height = 3, dpi = 600)
+```
+
+```{r}
+FeaturePlot(query, features = "predicted.celltype.score", reduction = "ref.umap") +
+  theme(text = element_text(family = "ssp"),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_blank()) +
+        guides(color = guide_legend(override.aes = list(shape = 15, size = 6))) +
+        NoLegend()
+
+ggsave(file.path("./ref_mapping/figures/scores_10x_onto_icell_umap.png"), plot = umap, width = 3.5, height = 3, dpi = 600)
+```
+
+```{r}
+umap <- FeaturePlot(query, features = "predicted.celltype.score", reduction = "ref.umap") +
+  theme(text = element_text(family = "ssp"),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_blank()) +
+        guides(color = guide_legend(override.aes = list(shape = 15, size = 6))) +
+        NoLegend()
+
+ggsave(file.path("./ref_mapping/figures/scores_10x_onto_icell_umap.png"), plot = umap, width = 3.5, height = 3, dpi = 600)
+```
+
+```{r}
+saveRDS(query, "./ref_mapping/query_10x.rds")
+saveRDS(r, "./ref_mapping/query_icell.rds")
+```
+
+
+```{r}
+DimPlot(q, reduction = "ref.umap", group.by = "predicted.celltype", label = TRUE)
+
+p1 <- DimPlot(reference, reduction = "umap", group.by = "cell_type", label = TRUE, label.size = 3,
+    repel = TRUE) + NoLegend() + ggtitle("Reference annotations")
+p2 <- DimPlot(query, reduction = "ref.umap", group.by = "predicted.celltype", label = TRUE,
+    label.size = 3, repel = TRUE) + NoLegend() + ggtitle("Query transferred labels")
+p1 + p2
+```
+
+
+

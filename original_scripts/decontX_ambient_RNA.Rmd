@@ -1,0 +1,42 @@
+---
+title: "decontX_ambient_RNA.Rmd"
+output: Calculate ambient RNA contamination using decontX
+author: Haewon Shin
+---
+
+```{r}
+# BiocManager::install("decontX")
+library(decontX)
+library(SingleCellExperiment)
+```
+
+```{r}
+Idents(icell) <- "sample"
+sample_names <- levels(Idents(icell))
+
+for (sample in sample_names) {
+  obj <- subset(icell, idents = sample)
+  counts <- GetAssayData(object = obj, slot = "counts")
+  sce <- SingleCellExperiment(list(counts = counts))
+  sce <- decontX(sce)
+  dens <- density(colData(sce)$decontX_contamination)
+  print(sample)
+  print(dens$x[which.max(dens$y)])
+}
+
+```
+```{r}
+Idents(x) <- "sample"
+sample_names <- levels(Idents(x))
+
+for (sample in sample_names) {
+  obj <- subset(x, idents = sample)
+  counts <- GetAssayData(object = obj, slot = "counts")
+  sce <- SingleCellExperiment(list(counts = counts))
+  sce <- decontX(sce)
+  dens <- density(colData(sce)$decontX_contamination)
+  print(sample)
+  print(dens$x[which.max(dens$y)])
+}
+```
+

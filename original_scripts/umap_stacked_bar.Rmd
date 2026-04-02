@@ -1,0 +1,138 @@
+---
+title: "umap_stacked_bar.Rmd"
+output: Plot UMAPs with same color scheme between ICELL8 and 10X; plot stacked bar graph of cell types
+author: Haewon Shin
+---
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(ggplot2)
+library(harmony)
+library(ggsci)
+library(paletteer)
+library(showtext)
+```
+
+```{r}
+font_add_google("Source Sans Pro", "ssp")  # "ssp" is the alias
+showtext_auto()
+```
+```{r}
+colors_icell <- c(
+  "#332288", "#117733", "#44AA99", "#88CCEE", "#DDCC77",
+  "#CC6677", "#AA4499", "#882255", "#661100", "#6699CC", "#888888"
+)
+
+colors_x <- c(
+  "#332288", # cm
+  "#117733", # endocardial
+  "#44AA99", # endothelial
+  "#88CCEE", # fibro
+  "#DDCC77", # lymphatic
+  "#CC6677", # mac
+  "#AA4499", # mast cell
+  "#882255", # monocyte
+  "#F98400", # neutrophil
+  "#661100", # pericyte
+  "#6699CC", # proliferating
+  "#1F78B4", # smc
+  "#888888" # t cell
+)
+```
+
+# ICELL
+```{r}
+# UMAP of annotated global object
+umap <- DimPlot(icell, reduction = "umap", group.by = "annot_fig", cols = colors_icell) +
+  theme(text = element_text(family = "ssp"),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_blank(),
+        legend.text = element_text(size = 40)) +
+        guides(color = guide_legend(override.aes = list(shape = 15, size = 6)))
+        
+ggsave(file.path("./icell/figures/icell_umap.png"), plot = umap, width = 3.5, height = 3, dpi = 600)
+```
+
+```{r}
+# Stacked bar plots for cell type per condition
+bar <- ggplot(icell@meta.data, aes(x=condition, fill=annot_fig)) + 
+  scale_fill_manual(values = colors_icell) + 
+  geom_bar(position = "fill") + 
+  theme_linedraw() + 
+  theme(axis.text.x = element_blank(),  
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 40),
+        axis.line = element_line(colour = "black"), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        panel.background = element_blank())
+ggsave(file.path("./icell/figures/cell_comp.png"), plot = bar, width = 3, height = 4, dpi = 600)
+```
+
+
+
+# 10X
+```{r}
+# UMAP of annotated global object
+umap <- DimPlot(x, reduction = "umap", group.by = "annot_fig", cols = colors_x) +
+  theme(text = element_text(family = "ssp"),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_blank(),
+        legend.text = element_text(size = 40)) +
+       guides(color = guide_legend(override.aes = list(shape = 15, size = 6)))
+        
+ggsave(file.path("./10x/figures/10x_umap.png"), plot = umap, width = 5, height = 4, dpi = 600)
+```
+
+```{r}
+# Stacked bar plots for cell type per CONDITION
+bar <- ggplot(x@meta.data, aes(x=condition, fill=annot_fig)) + 
+  scale_fill_manual(values = colors_x) + 
+  geom_bar(position = "fill") + 
+  theme_linedraw() + 
+  theme(axis.text.x = element_blank(),  
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 50),
+        axis.line = element_line(colour = "black"), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        panel.background = element_blank())
+ggsave(file.path("./10x/figures/cell_comp.png"), plot = bar, width = 3.15, height = 4, dpi = 600)
+```
+
+```{r}
+# Stacked bar plots for cell type per SAMPLE
+bar <- ggplot(icell@meta.data, aes(x=sample, fill=annot_fig)) + 
+  scale_fill_manual(values = colors_icell) + 
+  geom_bar(position = "fill") + 
+  theme_linedraw() + 
+  theme(axis.text.x = element_blank(),  
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 0),
+        axis.line = element_line(colour = "black"), 
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        panel.background = element_blank())
+
+ggsave(file.path("./icell/figures/cell_comp_sample.png"), plot = bar, width = 4.5, height = 4, dpi = 600)
+```
+
+
+```{r}
+# nuclei per sample
+table(x$sample)
+table(icell$sample)
+```
+

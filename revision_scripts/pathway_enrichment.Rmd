@@ -1,0 +1,88 @@
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+```
+
+# Import Seurat objects
+```{r}
+obj.10x <- readRDS("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/objects/10X_clustered.rds")
+obj.icell <- readRDS("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/objects/ICELL_clustered_with_introns.rds")
+obj.icell.nointrons <- readRDS("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/objects/ICELL_clustered_no_introns.rds")
+```
+
+# Find DE genes
+```{r}
+object <- obj.icell.nointrons
+# Find DE genes between MI and control for various cell types
+object$condition.celltype <- paste(object$condition, object$annot_fig, sep = ".")
+
+Idents(object) <- "condition.celltype"
+exp <- c("nicm.Fibroblast")
+ctrl <- c("donor.Fibroblast")
+
+de <- FindMarkers(object, ident.1 = exp, ident.2 = ctrl, verbose = TRUE)
+write.csv(de, "/storage2/fs1/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/fibroblast_icell_nointron.csv", quote = FALSE)
+```
+
+# Find shared DEGs
+```{r}
+de.icell <- read.csv("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/myeloid_icell_nointron.csv", header = TRUE, row.names = 1) # Import ICELL genes
+de.10x <- read.csv("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/myeloid_10X.csv", header = TRUE, row.names = 1) # Import 10X genes
+
+de.common <- intersect(rownames(de.icell), rownames(de.10x)) # Find common DEG (as list)
+write.csv(de.common, "/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/common_myeloid.csv", quote = FALSE) # Save common DEGs
+
+de.icell.unique <- setdiff(rownames(de.icell), rownames(de.10x))
+de.icell.unique <- de.icell[de.icell.unique, ]  # Find ICELL specific DEGs
+
+write.csv(de.icell.unique, "/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/icell_unique_myeloid.csv", quote = FALSE) # Save unique ICELL DEGs
+```
+
+# Pathway analysis
+```{r}
+de <- read.csv("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/icell_unique_myeloid.csv", header = TRUE, row.names = 1) # Import genes
+```
+
+# Set global memory
+```{r}
+mem.maxVSize()
+new_max_vsize <- 1024 * 1024 * 1024 * 1024
+mem.maxVSize(new_max_vsize)
+options(future.globals.maxSize = 8000*1024^2)
+```
+
+# Convert to Entrez ID
+```{r}
+gene_df <- bitr(rownames(de),
+                fromType="SYMBOL",
+                toType="ENTREZID",
+                OrgDb=org.Hs.eg.db)
+```
+
+# GO analysis
+```{r}
+go <- enrichGO(gene_df$ENTREZID,
+               OrgDb = org.Hs.eg.db,
+               ont = "BP")
+```
+```{r}
+p1 <- dotplot(go)
+ggsave("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/pathway/icell_unique_DEG_pathways/myeloid_GO_dotplot.png", plot = p1, width = 10, height = 6, dpi = 300)
+```
+
+
+# KEGG analysis
+```{r}
+kegg <- enrichKEGG(gene = gene_df$ENTREZID,
+                  organism = "hsa",
+                  pvalueCutoff = 0.05)
+```
+```{r}
+p1 <- dotplot(kegg)
+ggsave("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/pathway/icell_unique_DEG_pathways/myeloid_KEGG_dotplot.png", plot = p1, width = 10, height = 6, dpi = 300)
+```
+
+

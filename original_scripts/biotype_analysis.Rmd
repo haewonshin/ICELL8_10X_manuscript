@@ -1,0 +1,262 @@
+---
+title: "biotype_analysis.Rmd"
+output: Calculate top 20 RNA biotypes for list of genes and output pie chart
+author: Haewon Shin
+---
+
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(ggplot2)
+library(harmony)
+library(ggsci)
+library(paletteer)
+library(gridExtra)
+library(ggrepel)
+library(tibble)
+```
+
+```{r}
+palette <- c(
+  "#FF6F61", # Soft Coral - protein coding
+  "#6B8E23", # Olive Green - pseudogene
+  "#1F77B4", # Vibrant Blue - lincrna
+  "#F4A300", # Golden Yellow - antisense
+  "#D16F8D", # Muted Rose - unprocessed
+  "#2E8B57", # Sea Green - snRNA
+  "#FFD700", # Warm Yellow - miRNA
+  "#4B9CD3", # Sky Blue - miscRNA
+  "#9E9AC7", # Lavender Gray - TEC
+  "#FF9E9D", # Pastel Peach - sense intronic
+  "#A1D6E1"  # Soft Cyan - other
+)
+
+palette2 <- c(
+  "#FF6F61", # Soft Coral - protein coding
+  "#1F77B4", # Vibrant Blue - lincrna
+  "#F4A300", # Golden Yellow - antisense
+  "#66C2A5", # Light Green - TRV
+  "#FC8D62", # Orange - IGV
+  "#8DA0CB", # Blue - TR J
+  "#E78AC3", # Pink - processed transript
+  "#6B8E23", # Olive Green - pseudogene
+  "#E41A1C", # Red - IGC
+  "#D16F8D", # Muted Rose - unprocessed
+  "#A1D6E1"  # Soft Cyan - other
+)
+
+palette3 <- c(
+  "#FF6F61", # Soft Coral - protein coding
+  "#F4A300", # Golden Yellow - antisense
+  "#1F77B4", # Vibrant Blue - lincrna
+  "#6B8E23", # Olive Green - pseudogene
+  "#FF9E9D", # Pastel Peach - sense intronic
+  "#9E9AC7", # Lavender Gray - TEC
+  "#4B9CD3", # Sky Blue - miscRNA
+  "#E78AC3", # Pink - processed transcript
+  "#2E8B57", # Sea Green - snRNA
+  "#D16F8D", # Muted Rose - unprocessed
+  "#A1D6E1"  # Soft Cyan - other
+)
+
+palette4 <- c(
+  "#FF6F61", # Soft Coral - protein coding
+  "#1F77B4", # Vibrant Blue - lincrna
+  "#F4A300", # Golden Yellow - antisense
+  "#66C2A5", # Light Green - TRV
+  "#FC8D62", # Orange - IGV
+  "#E41A1C", # Red - IGC
+  "#A6D854", # Lime Green - TRC
+  "#E78AC3", # Pink - processed transcript
+  "#FFEE00", # Bright Yellow - IGC pseudogene
+  "#6B8E23" # Olive Green - pseudogene
+)
+```
+
+
+```{r}
+icell <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/icell/objects/global_reclustered.rds")
+gene_info <- read.table(file = "/Volumes/klavine/Active/Haewon/nicm_donor/samples_icell/D1118/analyze/gene_info.csv", sep = ",", header = TRUE)
+```
+
+```{r}
+# Get most abundant biotypes from all of the features in the object
+counts <- GetAssayData(icell, slot = "counts")
+allFeatures <- rownames(counts)[Matrix::rowSums(counts)>0] # Get nonzero features
+allFeatures <- gene_info[gene_info$Gene_Name %in% allFeatures, ] # Get biotypes for the nonzero features
+allFeatures <- allFeatures[!duplicated(allFeatures$Gene_Name), ] # Remove duplicates
+allFeatures.nc <- allFeatures %>% dplyr::count(Gene_Biotype) # Count number of occurrences of each biotype
+
+allFeatures.nc <- allFeatures.nc[order(-allFeatures.nc$n), ] # Order, descending
+
+# Keep the top 20 most frequent; lump the others into "Other"
+allFeatures.top20 <- allFeatures.nc %>%
+  mutate(Gene_Biotype = ifelse(row_number() > 20, "Other", as.character(Gene_Biotype))) %>%
+  group_by(Gene_Biotype) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  arrange(desc(n)) %>%
+  mutate(Gene_Biotype = factor(Gene_Biotype, levels = c(setdiff(unique(Gene_Biotype), "Other"), "Other"))) %>%
+  arrange(factor(Gene_Biotype, levels = c(setdiff(unique(Gene_Biotype), "Other"), "Other")), desc(n))
+```
+```{r}
+# Save as .csv file
+write.csv(allFeatures.top20, "./figures/biotypes_top20.csv", row.names = FALSE)
+```
+```{r}
+# Keep the top 10 most frequent; lump the others into "Other"
+allFeatures.top10 <- allFeatures.nc %>%
+  mutate(Gene_Biotype = ifelse(row_number() > 10, "Other", as.character(Gene_Biotype))) %>%
+  group_by(Gene_Biotype) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  arrange(desc(n)) %>%
+  mutate(Gene_Biotype = factor(Gene_Biotype, levels = c(setdiff(unique(Gene_Biotype), "Other"), "Other"))) %>%
+  arrange(factor(Gene_Biotype, levels = c(setdiff(unique(Gene_Biotype), "Other"), "Other")), desc(n))
+
+# Calculate percentages for each Gene_Biotype
+allFeatures.top10 <- allFeatures.top10 %>%
+  mutate(percentage = n / sum(n) * 100)
+
+# Create labels for the legend with percentages
+legend_labels <- paste0(allFeatures.top10$Gene_Biotype, " (", round(allFeatures.top10$percentage, 1), "%)")
+
+# Create the pie chart without percentages around the pie
+p1 <- ggplot(allFeatures.top10, aes(x = "", y = n, fill = Gene_Biotype)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y", start = 0) +                             
+  scale_fill_manual(values = palette2, labels = legend_labels) +
+  theme_void() +
+  theme(
+    legend.text = element_text(size = 45), 
+    legend.title = element_blank(),
+    text = element_text(family = "ssp"),
+    panel.background = element_rect(fill = "white", color = "white"), # Set background to white
+    plot.background = element_rect(fill = "white", color = "white")
+    )
+
+# Save
+ggsave(file.path("./10x/figures/piechart_biotypes_allgenes.png"), plot = p1, width = 5, height = 3.5, dpi = 600)
+```
+
+```{r}
+# DE between conditions
+Idents(icell) <- "condition"
+de.cond <- FindMarkers(icell, ident.1 = "nicm", ident.2 = "donor")
+
+de.filtered <- de.cond %>% filter(avg_log2FC >= 1.5)
+de.nc <- gene_info[gene_info$Gene_Name %in% rownames(de.filtered), ]
+counts.nc <- de.nc %>% dplyr::count(Gene_Biotype) %>% mutate(fraction = (n/sum(n)*100))
+```
+
+
+```{r}
+counts.nc <- counts.nc[order(-counts.nc$fraction), ]
+counts.top10 <- counts.nc %>%
+  mutate(Gene_Biotype = ifelse(row_number() > 10, "Other", as.character(Gene_Biotype))) %>%
+  group_by(Gene_Biotype) %>%
+  summarise(n = sum(n), .groups = "drop")
+```
+
+```{r}
+# Get variable features to figure out how many are noncoding
+var <- VariableFeatures(icell)
+var <- gene_info[gene_info$Gene_Name %in% var, ]
+counts <- var %>% dplyr::count(Gene_Biotype)
+
+# Keep the top 10 most frequent; lump the others into "Other"
+counts <- counts[order(-counts$n), ] # Order, descending
+counts <- counts %>%
+  mutate(Gene_Biotype = ifelse(row_number() > 10, "Other", as.character(Gene_Biotype))) %>%
+  group_by(Gene_Biotype) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  arrange(desc(n)) %>%
+  mutate(Gene_Biotype = factor(Gene_Biotype, levels = c(setdiff(unique(Gene_Biotype), "Other"), "Other"))) %>%
+  arrange(factor(Gene_Biotype, levels = c(setdiff(unique(Gene_Biotype), "Other"), "Other")), desc(n))
+
+# Calculate percentages for each Gene_Biotype
+counts <- counts %>%
+  mutate(percentage = n / sum(n) * 100)
+
+# Create labels for the legend with percentages
+legend_labels <- paste0(counts$Gene_Biotype, " (", round(counts$percentage, 1), "%)")
+```
+```{r}
+# Create the pie chart without percentages around the pie
+p1 <- ggplot(counts, aes(x = "", y = n, fill = Gene_Biotype)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y", start = 0) +                             
+  scale_fill_manual(values = palette3, labels = legend_labels) +
+  theme_void() +
+  theme(
+    legend.text = element_text(size = 45), 
+    legend.title = element_blank(),
+    text = element_text(family = "ssp"),
+    panel.background = element_rect(fill = "white", color = "white"), # Set background to white
+    plot.background = element_rect(fill = "white", color = "white")
+    )
+
+ggsave(file.path("./icell/figures/piechart_biotypes_hvg.png"), plot = p1, width = 5, height = 3.5, dpi = 600)
+```
+
+```{r}
+# Volcano plot of lncRNAs
+lnc <- gene_info[gene_info$Gene_Name %in% rownames(de.cond), ]
+lnc <- lnc %>% filter(Gene_Biotype == "lincRNA")
+lnc <- de.cond[rownames(de.cond) %in% lnc$Gene_Name, ]
+
+lnc <- lnc %>%
+  mutate(
+    significance = case_when(
+      avg_log2FC >= 1 & p_val_adj < 0.05 ~ "Upregulated",
+      avg_log2FC <= -1 & p_val_adj < 0.05 ~ "Downregulated",
+      TRUE ~ "Not Significant"
+    )
+  )
+
+lnc <- lnc %>% rownames_to_column(var = "Gene")  # Moves row names into a column called "Gene"
+
+ggplot(lnc, aes(x = avg_log2FC, y = -log10(p_val_adj), color = significance)) +
+  geom_point(alpha = 0.7, size = 3) +
+  scale_color_manual(values = c("Not Significant" = "gray", "Upregulated" = "red", "Downregulated" = "blue")) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  labs(
+    title = "Volcano Plot of Differentially Expressed lncRNAs",
+    x = "log2(Fold Change)",
+    y = "-log10(p-value)"
+  ) +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +  # p-value threshold
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") + # fold change threshold
+  geom_text_repel(
+    data = lnc %>% filter(significance != "Not Significant"),  # Label only significant genes
+    aes(label = Gene),
+    size = 3,
+    box.padding = 0.5,
+    max.overlaps = 10
+  )
+```
+
+```{r}
+library(devtools)
+library(fgsea)
+library(data.table)
+library(tibble)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(ggrepel)
+library(RColorBrewer)
+```
+```{r}
+install_github("ylab-hi/lncGSEA")
+library(lncGSEA)
+```
+```{r}
+# DE between fibroblasts
+```

@@ -1,0 +1,237 @@
+---
+title: "annotation_cleanup.Rmd"
+output: Collapse cell subtypes into main annotations for figures
+author: Haewon Shin
+---
+
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(ggplot2)
+library(harmony)
+library(ggsci)
+library(paletteer)
+```
+
+# ICELL
+```{r}
+icell <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/icell/objects/global_0.9.rds")
+```
+```{r}
+# cell counts
+# Create a table of cell counts per sample
+cell_counts_df <- as.data.frame(table(icell$sample))
+colnames(cell_counts_df) <- c("Sample", "CellCount")
+
+# Plot the cell counts
+p1 <- ggplot(cell_counts_df, aes(x = Sample, y = CellCount, fill = Sample)) +
+    labs(title = "Cells per sample, post-filtering", x = "Sample", y = "Number of Cells") + 
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = CellCount), vjust = -0.3, color = "black")
+
+ggsave(file.path("./icell/qc_metrics/cellcount_postQC.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+# umap
+p1 <- DimPlot(icell, reduction = "umap", group.by = "SCT_snn_res.0.9", label = TRUE) + ggtitle("ICELL global 0.9 unannotated")
+ggsave(file.path("./icell/figures/0.9_global_unannotated.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+p1 <- VlnPlot(icell, features = "nCount_RNA", group.by = "SCT_snn_res.0.9", pt.size = 0) + ggtitle("nCount by cluster")
+ggsave(file.path("./icell/figures/nCount_by_cluster.png"), plot = p1, width = 6, height = 4, dpi = 600)
+p1 <- VlnPlot(icell, features = "nFeature_RNA", group.by = "SCT_snn_res.0.9", pt.size = 0) + ggtitle("nFeature by cluster")
+ggsave(file.path("./icell/figures/nFeature_by_cluster.png"), plot = p1, width = 6, height = 4, dpi = 600)
+p1 <- VlnPlot(icell, features = "percent.mito", group.by = "SCT_snn_res.0.9", pt.size = 0) + ggtitle("percent mito by cluster")
+ggsave(file.path("./icell/figures/percent_mito_by_cluster.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+# Stacked bar plots for cell type per condition
+p1 <- ggplot(icell@meta.data, aes(x=sample, fill=SCT_snn_res.0.9)) + 
+  scale_fill_paletteer_d("Polychrome::palette36") +
+  geom_bar(position = "fill") + 
+  theme_linedraw() + 
+  theme(axis.text.x = element_text(angle = 90)) + 
+  theme(axis.line = element_line(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank()) + 
+  ggtitle("Cluster composition by sample")
+ggsave(file.path("./icell/figures/clusters_by_sample.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+FeaturePlot(icell, features = "NRG1")
+```
+
+```{r}
+icell <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/icell/objects/global_reclustered.rds")
+# DE gene analysis
+Idents(icell) <- "condition"
+de.icell <- FindMarkers(icell, ident.1 = "nicm", ident.2 <- "donor")
+# read in gene info list
+gene_info <- read.table(file = "./samples_icell/D1118/analyze/gene_info.csv", sep = ",", header = TRUE)
+# classify de.icell genes by type
+gene_de <- gene_info[gene_info$Gene_Name %in% rownames(de.icell), , drop = FALSE]
+gene_de <- gene_de[!duplicated(gene_de$Gene_Name), ]
+de_df <- as.data.frame(table(gene_de$Gene_Biotype))
+de_df <- de_df[order(-de_df$Freq), ]
+
+de_df <- de_df %>%
+  mutate(Var1 = ifelse(row_number() > 10, "Other", as.character(Var1))) %>%
+  group_by(Var1) %>%
+  summarise(Freq = sum(Freq), .groups = "drop")
+
+p1 <- ggplot(de_df, aes(x = "", y = Freq, fill = Var1)) +
+  scale_fill_paletteer_d("Polychrome::palette36") +
+  geom_bar(stat = "identity", width = 1) +  # Create bar chart
+  coord_polar("y", start = 0) +             # Convert to pie chart
+  theme_void() +                             # Remove unnecessary chart elements
+  labs(title = "Top 10 gene biotypes of DE genes in NICM") +
+  theme(legend.title = element_blank())
+ggsave(file.path("./icell/figures/piechart_biotypes_DE.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+
+```{r}
+icell <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/icell/objects/global_reclustered.rds")
+Idents(icell) <- "cell_type"
+levels(Idents(icell))
+# Collapse endothelial annotation
+fun <- function(x) {
+  if (x == "monocyte") {"Monocyte"}
+  else if (x == "endothelial_1") {"Endothelial"}
+  else if (x == "fibroblast") {"Fibroblast"}
+  else if (x == "endocardial") {"Endocardial"}
+  else if (x == "mast_cells") {"Mast cell"}
+  else if (x == "macrophage") {"Macrophage"}
+  else if (x == "cm") {"Cardiomyocyte"}
+  else if (x == "proliferating") {"Proliferating"}
+  else if (x == "endothelial_2") {"Endothelial"}
+  else if (x == "lymphatic") {"Lymphatic"}
+  else if (x == "pericyte") {"Pericyte"}
+  else if (x == "t_cell") {"T cell"}
+}
+icell$annot_fig <- mapply(fun, icell$cell_type)
+saveRDS(icell, "./icell/figures/global_withfiglabels.rds")
+```
+
+
+# 10x
+```{r}
+x <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/10x/objects/global_0.5.rds")
+```
+
+```{r}
+# cell counts
+# Create a table of cell counts per sample
+cell_counts_df <- as.data.frame(table(x$sample))
+colnames(cell_counts_df) <- c("Sample", "CellCount")
+
+# Plot the cell counts
+p1 <- ggplot(cell_counts_df, aes(x = Sample, y = CellCount, fill = Sample)) +
+    labs(title = "Cells per sample, post-filtering", x = "Sample", y = "Number of Cells") + 
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = CellCount), vjust = -0.3, color = "black")
+
+ggsave(file.path("./10x/qc_metrics/cellcount_postQC.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+
+```{r}
+# umap
+p1 <- DimPlot(x, reduction = "umap", group.by = "SCT_snn_res.0.5", label = TRUE) + ggtitle("10X global 0.5 unannotated")
+ggsave(file.path("./10x/figures/0.5_global_unannotated.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+p1 <- VlnPlot(x, features = "nCount_RNA", group.by = "SCT_snn_res.0.5", pt.size = 0) + ggtitle("nCount by cluster")
+ggsave(file.path("./10x/figures/nCount_by_cluster.png"), plot = p1, width = 6, height = 4, dpi = 600)
+p1 <- VlnPlot(x, features = "nFeature_RNA", group.by = "SCT_snn_res.0.5", pt.size = 0) + ggtitle("nFeature by cluster")
+ggsave(file.path("./10x/figures/nFeature_by_cluster.png"), plot = p1, width = 6, height = 4, dpi = 600)
+p1 <- VlnPlot(x, features = "percent.mito", group.by = "SCT_snn_res.0.5", pt.size = 0) + ggtitle("percent mito by cluster")
+ggsave(file.path("./10x/figures/percent_mito_by_cluster.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+# Stacked bar plots for cell type per condition
+p1 <- ggplot(x@meta.data, aes(x=sample, fill=SCT_snn_res.0.5)) + 
+  scale_fill_paletteer_d("Polychrome::palette36") +
+  geom_bar(position = "fill") + 
+  theme_linedraw() + 
+  theme(axis.text.x = element_text(angle = 90)) + 
+  theme(axis.line = element_line(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank()) + 
+  ggtitle("Cluster composition by sample")
+ggsave(file.path("./10x/figures/clusters_by_sample.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+# delete- 4, 12, 19, 22 sus
+VlnPlot(x, features = "nCount_RNA", group.by = "SCT_snn_res.0.5", pt.size = 0) + ggtitle("nCount by cluster")
+VlnPlot(x, features = "nFeature_RNA", group.by = "SCT_snn_res.0.5", pt.size = 0) + ggtitle("nFeature by cluster")
+VlnPlot(x, features = "percent.mito", group.by = "SCT_snn_res.0.5", pt.size = 0) + ggtitle("percent mito by cluster")
+```
+
+```{r}
+# delete - 7, 
+ggplot(x@meta.data, aes(x=condition, fill=SCT_snn_res.0.5)) + 
+  scale_fill_paletteer_d("Polychrome::palette36") +
+  geom_bar(position = "fill") + 
+  theme_linedraw() + 
+  theme(axis.text.x = element_text(angle = 90)) + 
+  theme(axis.line = element_line(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank()) + 
+  ggtitle("Cluster composition by sample")
+```
+```{r}
+FeaturePlot(x, features = "FCGR3B") # for neutrophils
+FeaturePlot(x, features = "MYH11") # for smc
+```
+```{r}
+x <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/10x/objects/global_reclustered.rds")
+# DE gene analysis
+Idents(x) <- "condition"
+de.x <- FindMarkers(x, ident.1 = "nicm", ident.2 <- "donor")
+# read in gene info list
+gene_info <- read.table(file = "./samples_icell/D1118/analyze/gene_info.csv", sep = ",", header = TRUE)
+# classify de.x genes by type
+gene_de <- gene_info[gene_info$Gene_Name %in% rownames(de.x), , drop = FALSE]
+gene_de <- gene_de[!duplicated(gene_de$Gene_Name), ]
+de_df <- as.data.frame(table(gene_de$Gene_Biotype))
+de_df <- de_df[order(-de_df$Freq), ]
+
+de_df <- de_df %>%
+  mutate(Var1 = ifelse(row_number() > 10, "Other", as.character(Var1))) %>%
+  group_by(Var1) %>%
+  summarise(Freq = sum(Freq), .groups = "drop")
+
+p1 <- ggplot(de_df, aes(x = "", y = Freq, fill = Var1)) +
+  scale_fill_paletteer_d("Polychrome::palette36") +
+  geom_bar(stat = "identity", width = 1) +  # Create bar chart
+  coord_polar("y", start = 0) +             # Convert to pie chart
+  theme_void() +                             # Remove unnecessary chart elements
+  labs(title = "Top 10 gene biotypes of DE genes in NICM") +
+  theme(legend.title = element_blank())
+ggsave(file.path("./10x/figures/piechart_biotypes_DE.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+
+```{r}
+x <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/10x/objects/global_reclustered.rds")
+Idents(x) <- "cell_type"
+levels(Idents(x))
+# Collapse endothelial annotation
+fun <- function(x) {
+  if (x == "macrophage") {"Macrophage"}
+  else if (x %in% c("cm_1", "cm_2")) {"Cardiomyocyte"}
+  else if (x %in% c("endothelial_1", "endothelial_2")) {"Endothelial"}
+  else if (x %in% c("fibroblast_1", "fibroblast_2", "fibroblast_3", "fibroblast_4", "fibroblast_5")) {"Fibroblast"}
+  else if (x == "endocardial") {"Endocardial"}
+  else if (x == "pericyte") {"Pericyte"}
+  else if (x == "monocyte") {"Monocyte"}
+  else if (x == "t_cell") {"T cell"}
+  else if (x == "proliferating") {"Proliferating"}
+  else if (x == "glia") {"Glia"}
+  else if (x == "mast_cell") {"Mast cell"}
+  else if (x == "smc") {"Smooth muscle cell"}
+  else if (x == "lymphatic") {"Lymphatic"}
+  else if (x == "neutrophil") {"Neutrophil"}
+  else if (x == "epicardial") {"Epicardial"}
+}
+x$annot_fig <- mapply(fun, x$cell_type)
+Idents(x) <- "annot_fig"
+x <- subset(x, idents = c("Epicardial", "Glia"), invert = TRUE)
+
+saveRDS(x, "./10x/objects/global_withfiglabels.rds")
+```

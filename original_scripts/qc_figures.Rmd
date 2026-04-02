@@ -1,0 +1,198 @@
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(ggplot2)
+library(harmony)
+library(ggsci)
+library(paletteer)
+library(showtext)
+```
+```{r}
+font_add_google("Source Sans Pro", "ssp")  # "ssp" is the alias
+showtext_auto()
+```
+```{r}
+color_palette <- c(
+  "#D73027",  # strong red
+  "#FC8D59",  # coral pink
+  "#1B7837",  # deep green
+  "#66BD63",  # light green
+  "#4575B4",  # bright blue
+  "#313695"   # dark indigo-blue
+)
+```
+
+# 10X
+```{r}
+x <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/10x/objects/preQC.rds")
+```
+
+# Violin plots of counts/sample and genes/sample and percent mito/hemo/ribo
+```{r}
+# Number of counts per sample
+p1 <- VlnPlot(x, features = "nCount_RNA", group.by = "sample", pt.size = 0) + 
+  labs(y = "UMIs per cell") +
+  theme(text = element_text(family = "ssp"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 60),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 60, color = "black"), 
+        axis.text.y = element_text(size = 60, color = "black")) +
+  scale_fill_manual(values = color_palette) +
+  ggtitle(NULL)
+
+ggsave(file.path("~/Desktop/ICELL 10X paper/Figures_from_R/10X_counts.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+# Genes per sample
+p1 <- VlnPlot(x, features = "nFeature_RNA", group.by = "sample", pt.size = 0) + 
+  labs(y = "Genes per cell") +
+  theme(text = element_text(family = "ssp"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 60),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 60, color = "black"), 
+        axis.text.y = element_text(size = 60, color = "black")) +
+  scale_fill_manual(values = color_palette) +
+  ggtitle(NULL)
+
+ggsave(file.path("~/Desktop/ICELL 10X paper/Figures_from_R/10X_features.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+```{r}
+# genes
+p1 <- VlnPlot(x, features = "nFeature_RNA", group.by = "sample", pt.size = 0) + ggtitle("Number of genes per cell")
+ggsave(file.path("./10x/qc_metrics/nfeature.png"), plot = p1, width = 6, height = 4, dpi = 600)
+
+p1 <- VlnPlot(x, features = "nCount_RNA", group.by = "sample", pt.size = 0) + ggtitle("Number of UMIs per cell")
+ggsave(file.path("./10x/qc_metrics/ncount.png"), plot = p1, width = 6, height = 4, dpi = 600)
+
+p1 <- VlnPlot(x, features = "percent.mito", group.by = "sample", pt.size = 0) + ggtitle("% mitochondrial genes per cell")
+ggsave(file.path("./10x/qc_metrics/percent_mito.png"), plot = p1, width = 6, height = 4, dpi = 600)
+
+p1 <- VlnPlot(x, features = "percent.ribo", group.by = "sample", pt.size = 0) + ggtitle("% ribosomal genes per cell")
+ggsave(file.path("./10x/qc_metrics/percent_ribo.png"), plot = p1, width = 6, height = 4, dpi = 600)
+
+p1 <- VlnPlot(x, features = "percent.hemo", group.by = "sample", pt.size = 0) + ggtitle("% hemoglobin genes per cell")
+ggsave(file.path("./10x/qc_metrics/percent_hemo.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+
+```{r}
+# cell counts
+# Create a table of cell counts per sample
+cell_counts_df <- as.data.frame(table(x$sample))
+colnames(cell_counts_df) <- c("Sample", "CellCount")
+
+# Plot the cell counts
+p1 <- ggplot(cell_counts_df, aes(x = Sample, y = CellCount, fill = Sample)) +
+    labs(title = "Cells per sample, pre-filtering", x = "Sample", y = "Number of Cells") + 
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = CellCount), vjust = -0.3, color = "black")
+
+ggsave(file.path("./10x/qc_metrics/cellcount_preQC.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+
+
+# Cell counts in tabular form
+```{r}
+# Numbers of cells and counts
+x <- readRDS("/Volumes/klavine/Active/Haewon/nicm_donor/10x/objects/preQC.rds")
+table(x$sample)
+x@meta.data %>%
+  group_by(sample) %>%
+  summarise(total_counts = sum(nCount_RNA))
+```
+```{r}
+# Genes per cell
+# Extract metadata and label them
+x_meta <- x@meta.data %>%
+  mutate(sample = "10X")
+
+icell_meta <- icell@meta.data %>%
+  mutate(sample = "ICELL8")
+
+# Combine metadata
+meta <- bind_rows(x_meta, icell_meta)
+
+# Plot violin
+vln <- ggplot(meta, aes(x = sample, y = nFeature_RNA, fill = sample)) +
+  geom_violin(trim = FALSE) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12, color = "black"),  # tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "black"),  # larger y-axis labels
+    axis.line.x = element_line(color = "black"),
+    axis.line.y = element_line(color = "black"),
+    axis.ticks.x = element_line(color = "black"),
+    axis.ticks.y = element_line(color = "black")
+  ) +
+  ylim(0, 30000)
+
+ggsave("./figures/nFeatures.png", plot = vln, width = 4, height = 5, units = "in", dpi = 600)
+
+# Just get genes per sample to make bar plot in prism
+table(x$sample)
+x@meta.data %>%
+  group_by(sample) %>%
+  summarise(total_counts = mean(nFeature_RNA))
+
+table(icell$sample)
+icell@meta.data %>%
+  group_by(sample) %>%
+  summarise(total_counts = mean(nFeature_RNA))
+```
+
+```{r}
+# Plot violin
+vln <- ggplot(meta, aes(x = sample, y = percent.mito, fill = sample)) +
+  geom_violin(trim = FALSE) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12, color = "black"),  # tilted x-axis labels
+    axis.text.y = element_text(size = 12, color = "black"),  # larger y-axis labels
+    axis.line.x = element_line(color = "black"),
+    axis.line.y = element_line(color = "black"),
+    axis.ticks.x = element_line(color = "black"),
+    axis.ticks.y = element_line(color = "black")
+  ) +
+  ylim(0, 100)
+
+
+ggsave("./figures/percentmito.png", plot = vln, width = 4, height = 5, units = "in", dpi = 600)
+```
+```{r}
+# If you have a metadata column 'sample', calculate average mitochondrial percentage per sample
+average_mito_per_sample <- x@meta.data %>%
+  group_by(sample) %>%  # Replace 'sample' with your actual column name
+  summarise(average_percent_mt = mean(percent.mito, na.rm = TRUE))
+
+# View the result
+print(average_mito_per_sample)
+```
+
+```{r}
+# If you have a metadata column 'sample', calculate average mitochondrial percentage per sample
+average_ribo_per_sample <- icell@meta.data %>%
+  group_by(sample) %>%  # Replace 'sample' with your actual column name
+  summarise(average_percent_mt = mean(percent.ribo, na.rm = TRUE))
+
+# View the result
+print(average_ribo_per_sample)
+```
+
+

@@ -1,0 +1,66 @@
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(harmony)
+library(Matrix)
+library(BiocParallel)
+```
+
+# Set global memory
+```{r}
+mem.maxVSize()
+new_max_vsize <- 1024 * 1024 * 1024 * 1024
+mem.maxVSize(new_max_vsize)
+options(future.globals.maxSize = 8000*1024^2)
+```
+
+# Start with Seurat object
+```{r}
+obj.10x <- readRDS("/storage2/fs1/klavine/Active/Haewon/ICELL_10X_paper_revisions/objects/10X_clustered.rds")
+obj.icell <- readRDS("/storage2/fs1/klavine/Active/Haewon/ICELL_10X_paper_revisions/objects/ICELL_clustered_no_introns.rds")
+```
+
+# Get per gene stats for different cell types
+```{r}
+# subset one cell type
+myeloid.10x <- subset(obj.10x, subset = annot_fig == c("Macrophage", "Monocyte"))
+myeloid.icell <- subset(obj.icell, subset = annot_fig == c("Macrophage", "Monocyte"))
+
+# get normalized data
+mat.10x <- GetAssayData(myeloid.10x, slot="data")
+mat.icell <- GetAssayData(myeloid.icell, slot="data")
+
+# per-gene stats
+gene.stats <- function(mat) {
+  data.frame(
+    gene = rownames(mat),
+    mean = Matrix::rowMeans(mat),
+    var = apply(mat, 1, var)
+  )
+}
+
+stats.10x <- gene.stats(mat.10x)
+stats.icell <- gene.stats(mat.icell)
+```
+
+# Plot mean-variance
+```{r}
+stats.10x$platform <- "10X"
+stats.icell$platform <- "ICELL8"
+
+both <- rbind(stats.10x, stats.icell)
+
+p1 <- ggplot(both, aes(mean, var, color=platform)) +
+  geom_point(alpha=1) +
+  scale_x_log10() +
+  scale_y_log10()
+
+ggsave(file.path("/storage2/fs1/klavine/Active/Haewon/ICELL_10X_paper_revisions/mean_variance_HVG/mean-variance_myeloid_plot.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+
+```{r}
+
+```
+

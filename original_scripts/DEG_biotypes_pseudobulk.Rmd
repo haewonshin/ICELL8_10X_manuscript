@@ -1,0 +1,605 @@
+---
+title: "DEG_biotypes_pseudobulk.Rmd"
+output: Obtain biotype breakdowns of DEGs between conditions and run pseudobulk to find number of DEGs per cell type
+author: Haewon Shin
+---
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(ggplot2)
+library(harmony)
+library(showtext)
+library(pheatmap)
+library(ggrepel)
+library(VennDiagram)
+library(grid)
+library(ggvenn)
+library(showtext)
+```
+```{r}
+font_add_google("Source Sans Pro", "ssp")  # "ssp" is the alias
+showtext_auto()
+```
+
+```{r}
+# Set memory limit first
+mem.maxVSize()
+new_max_vsize <- 1024 * 1024 * 1024 * 1024  
+mem.maxVSize(new_max_vsize)
+options(future.globals.maxSize = 8000*1024^2)
+```
+```{r}
+x <- readRDS("/storage2/fs1/klavine/Active/Haewon/nicm_donor/10x/objects/global_withfiglabels.rds")
+icell <- readRDS("/storage2/fs1/klavine/Active/Haewon/nicm_donor/ICELL/objects/global_withfiglabels.rds")
+# with introns
+icell <- readRDS("/storage2/fs1/klavine/Active/Haewon/Exp007 20250926 Chromosomal shutdown Halushka Lee/global reclustered 2.rds")
+```
+
+# Calculate DE genes between conditions
+```{r}
+Idents(x) <- "condition"
+markers.10x <- FindMarkers(x, ident.1 = "nicm", ident.2 = "donor")
+# Remove mitochondrial genes
+markers.10x <- markers.10x %>%
+  filter(!grepl("^MT-", rownames(markers.10x)))
+```
+
+```{r}
+Idents(icell) <- "condition"
+markers.icell <- FindMarkers(icell, ident.1 = "nicm", ident.2 = "donor")
+# Remove mitochondrial genes
+markers.icell <- markers.icell %>%
+  filter(!grepl("^MT-", rownames(markers.icell)))
+```
+
+
+# Biotype breakdown of DE genes
+```{r}
+# Icell
+gene_info <- read.table(file = "/Volumes/klavine/Active/Haewon/nicm_donor/samples_icell/D1118/analyze/gene_info.csv", sep = ",", header = TRUE) # get gene info
+# start with icell DE genes
+de_sig <- markers.icell[markers.icell$p_val_adj < 0.05, ]
+de_sig <- gene_info[gene_info$Gene_Name %in% rownames(de_sig), ]
+de_sig <- de_sig[!duplicated(de_sig$Gene_Name), ]
+biotype.ct <- de_sig %>% dplyr::count(Gene_Biotype)
+biotype.ct <- biotype.ct[order(-biotype.ct$n), ]
+
+palette <- c(
+  "#F4A300", # Golden Yellow - antisense
+  "#FFD700", # Golden - bidirectional promoter
+  "#1F77B4", # Vibrant Blue - lincrna
+  "#377EB8", # Deep Blue - macro_lncRNA
+  "#4B9CD3", # Sky Blue - miscRNA
+  "#6B8E23", # Olive Green - pseudogene
+  "#E78AC3", # Pink - processed transript
+  "#FF6F61", # Soft Coral - protein coding
+  "#FF9E9D", # Pastel Peach - sense intronic
+  "#4DAF4A", # Green - sense_overlapping
+  "#2E8B57", # Sea Green - snRNA
+  "#9E9AC7", # Lavender Gray - TEC
+  "#FF7F00",  # Dark Orange - transcribed processed pseudogene
+  "#A6D854", # Lime Green - unitary
+  "#A1D6E1",  # Soft Cyan - other
+  "#D16F8D" # Muted Rose - unprocessed
+)
+
+pie <- ggplot(biotype.ct, aes(x = "", y = n, fill = Gene_Biotype)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y", start = 0) +                             
+  scale_fill_manual(values = palette) +
+  theme_void() +
+  theme(
+    legend.text = element_text(size = 36),
+    legend.title = element_blank(),
+    text = element_text(family = "ssp")
+    )
+
+ggsave("/Users/haewonshin/Desktop/ICELL 10X paper/Figures_from_R/DEG/icell_de_biotypes.png", plot = pie, width = 7, height = 5, dpi = 300)
+```
+```{r}
+# 10x
+gene_info <- read.table(file = "/Volumes/klavine/Active/Haewon/nicm_donor/samples_icell/D1118/analyze/gene_info.csv", sep = ",", header = TRUE) # get gene info
+# start with icell DE genes
+de_sig <- markers.10x[markers.10x$p_val_adj < 0.05, ]
+de_sig <- gene_info[gene_info$Gene_Name %in% rownames(de_sig), ]
+de_sig <- de_sig[!duplicated(de_sig$Gene_Name), ]
+biotype.ct <- de_sig %>% dplyr::count(Gene_Biotype)
+biotype.ct <- biotype.ct[order(-biotype.ct$n), ]
+
+palette <- c(
+  "#F4A300", # Golden Yellow - antisense
+  "#1F77B4", # Vibrant Blue - lincrna
+  "#FF6F61" # Soft Coral - protein coding
+)
+
+pie <- ggplot(biotype.ct, aes(x = "", y = n, fill = Gene_Biotype)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y", start = 0) +                             
+  scale_fill_manual(values = palette) +
+  theme_void() +
+  theme(
+    legend.text = element_text(size = 36),
+    legend.title = element_blank(),
+    text = element_text(family = "ssp")
+    )
+
+ggsave("/Users/haewonshin/Desktop/ICELL 10X paper/Figures_from_R/DEG/10x_de_biotypes.png", plot = pie, width = 7, height = 5, dpi = 300)
+```
+
+
+# Global volcano plot
+```{r}
+Idents(icell) <- "condition"
+markers.icell <- FindMarkers(icell, ident.1 = "nicm", ident.2 = "donor", logfc.threshold = 0)
+write.csv(markers.icell, file = "/Volumes/klavine/Active/Haewon/ICELL 10X paper/icell DEG global.csv", row.names = TRUE)
+```
+```{r}
+# Cap extremely high -log10(p_val_adj) values at 500
+markers.icell$gene <- rownames(markers.icell)
+markers.icell$significance <- "Not Significant"
+markers.icell$significance[markers.icell$avg_log2FC > 0.25] <- "Upregulated"
+markers.icell$significance[markers.icell$avg_log2FC < -0.25] <- "Downregulated"
+
+markers.icell$log10_padj <- -log10(markers.icell$p_val_adj)
+markers.icell$log10_padj[markers.icell$log10_padj > 500] <- 500 
+
+# Select top 10 most significant DEGs (you can change to top N)
+top_genes <- markers.icell %>%
+  dplyr::arrange(desc(avg_log2FC)) %>%              # Sort by log2FC descending
+  dplyr::slice_head(n = 5) %>%                      # Top 5 upregulated
+  dplyr::bind_rows(
+    markers.icell %>%
+      dplyr::arrange(avg_log2FC) %>%                # Sort ascending for bottom
+      dplyr::slice_head(n = 5)                      # Top 5 downregulated
+  )
+
+# Plot with gene labels
+q <- ggplot(markers.icell, aes(x = avg_log2FC, y = log10_padj, color = significance)) +
+  geom_point(alpha = 0.8, size = 0.7) +
+  geom_text_repel(data = top_genes, aes(label = gene), size = 12, max.overlaps = 100) +  # bigger gene labels
+  scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "gray", "Upregulated" = "red")) +
+  theme_minimal() +
+  labs(x = "Average Log2 Fold Change",
+       y = "-Log10 Adjusted P-Value") +
+  theme(
+    text = element_text(family = "ssp"),
+    plot.title = element_text(size = 40, face = "bold"),
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 30),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 30)
+  ) +
+  coord_cartesian(ylim = c(0, 500))
+
+ggsave("./icell volcano with labels.png", plot = q, width = 6, height = 4, dpi = 300)
+```
+```{r}
+# Plot no gene labels
+p <- ggplot(markers.icell, aes(x = avg_log2FC, y = log10_padj, color = significance)) +
+  geom_point(alpha = 0.8, size = 0.7) +
+  scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "gray", "Upregulated" = "red")) +
+  theme_minimal() +
+  labs(x = "Average Log2 Fold Change",
+       y = "-Log10 Adjusted P-Value") +
+  theme(
+    text = element_text(family = "ssp"),
+    plot.title = element_text(size = 40, face = "bold"),
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 30),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 30)
+  ) +
+  coord_cartesian(ylim = c(0, 500))
+
+ggsave("./icell volcano no labels.png", plot = p, width = 6, height = 4, dpi = 300)
+```
+
+```{r}
+Idents(x) <- "condition"
+markers.10x <- FindMarkers(x, ident.1 = "nicm", ident.2 = "donor", logfc.threshold = 0)
+write.csv(markers.10x, file = "/Volumes/klavine/Active/Haewon/nicm_donor/10x/marker_tables/10X_nicm.csv", row.names = TRUE)
+```
+```{r}
+# Cap extremely high -log10(p_val_adj) values at 500
+markers.10x$gene <- rownames(markers.10x)
+markers.10x$significance <- "Not Significant"
+markers.10x$significance[markers.10x$avg_log2FC > 0.25] <- "Upregulated"
+markers.10x$significance[markers.10x$avg_log2FC < -0.25] <- "Downregulated"
+
+markers.10x$log10_padj <- -log10(markers.10x$p_val_adj)
+markers.10x$log10_padj[markers.10x$log10_padj > 500] <- 500 
+
+# Select top 10 most significant DEGs (you can change to top N)
+top_genes <- markers.10x %>%
+  dplyr::arrange(desc(avg_log2FC)) %>%              # Sort by log2FC descending
+  dplyr::slice_head(n = 5) %>%                      # Top 5 upregulated
+  dplyr::bind_rows(
+    markers.10x %>%
+      dplyr::arrange(avg_log2FC) %>%                # Sort ascending for bottom
+      dplyr::slice_head(n = 5)                      # Top 5 downregulated
+  )
+
+# Plot with gene labels
+q <- ggplot(markers.10x, aes(x = avg_log2FC, y = log10_padj, color = significance)) +
+  geom_point(alpha = 0.8, size = 0.7) +
+  geom_text_repel(data = top_genes, aes(label = gene), size = 12, max.overlaps = 100) +  # bigger gene labels
+  scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "gray", "Upregulated" = "red")) +
+  theme_minimal() +
+  labs(x = "Average Log2 Fold Change",
+       y = "-Log10 Adjusted P-Value") +
+  theme(
+    text = element_text(family = "ssp"),
+    plot.title = element_text(size = 40, face = "bold"),
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 30),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 30)
+  ) +
+  coord_cartesian(ylim = c(0, 500))
+
+ggsave("./volcano_10x.png", plot = q, width = 6, height = 4, dpi = 300)
+```
+```{r}
+# Plot with gene labels
+s <- ggplot(markers.10x, aes(x = avg_log2FC, y = log10_padj, color = significance)) +
+  geom_point(alpha = 0.8, size = 0.7) +
+  scale_color_manual(values = c("Downregulated" = "blue", "Not Significant" = "gray", "Upregulated" = "red")) +
+  theme_minimal() +
+  labs(x = "Average Log2 Fold Change",
+       y = "-Log10 Adjusted P-Value") +
+  theme(
+    text = element_text(family = "ssp"),
+    plot.title = element_text(size = 40, face = "bold"),
+    axis.title = element_text(size = 30),
+    axis.text = element_text(size = 30),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 30)
+  ) +
+  coord_cartesian(ylim = c(0, 500))
+
+ggsave("./volcano_10x no labels.png", plot = s, width = 6, height = 4, dpi = 300)
+```
+
+
+# Pseudobulk plot
+```{r}
+pseudo.icell <- AggregateExpression(icell, assays = "RNA", slot = "counts", return.seurat = T, group.by = c("sample", "condition", "cell_type"))
+
+# Raw counts matrix
+counts <- GetAssayData(pseudo.icell, slot = "counts")
+
+# Cell (pseudobulk sample) names look like: "sample_condition_celltype"
+cell_names <- colnames(counts)
+
+# Parse metadata from cell names
+meta <- as.data.frame(do.call(rbind, strsplit(cell_names, "_")))
+colnames(meta) <- c("sample", "condition", "cell_type")
+meta$group <- cell_names
+rownames(meta) <- cell_names
+```
+```{r}
+library(DESeq2)
+
+results_list <- list()
+
+for (ct in unique(meta$cell_type)) {
+  message("Running DE for cell type: ", ct)
+  
+  keep_cells <- meta$cell_type == ct
+  counts_ct <- counts[, keep_cells]
+  meta_ct <- meta[keep_cells, ]
+
+  # Skip if < 2 samples per condition
+  if (length(unique(meta_ct$condition)) < 2 || min(table(meta_ct$condition)) < 2) next
+
+  dds <- DESeqDataSetFromMatrix(
+    countData = counts_ct,
+    colData = meta_ct,
+    design = ~ condition
+  )
+
+  # Filter low counts
+  keep_genes <- rowSums(counts(dds)) > 10
+  dds <- dds[keep_genes, ]
+
+  dds <- DESeq(dds)
+  res <- results(dds, contrast = c("condition", "nicm", "donor"))
+  
+  res_df <- as.data.frame(res)
+  res_df$gene <- rownames(res_df)
+  res_df$cell_type <- ct
+
+  results_list[[ct]] <- res_df
+}
+```
+```{r}
+# Merge all DE results
+pseudobulk_de <- do.call(rbind, results_list)
+pseudobulk_de$significance_fc <- ifelse(abs(pseudobulk_de$log2FoldChange) > 0.5, "FC > 0.5", "FC ≤ 0.5")
+pseudobulk_de <- subset(pseudobulk_de, cell_type != "Proliferating")
+
+p <- ggplot(pseudobulk_de, aes(x = cell_type, y = log2FoldChange, color = significance_fc)) +
+  geom_jitter(width = 0.3, alpha = 0.8, size = 0.5) +
+  scale_color_manual(values = c("FC > 0.5" = "red", "FC ≤ 0.5" = "gray")) +
+  coord_cartesian(ylim = c(-10, 10)) +
+  theme_classic() +  # ← USE THIS INSTEAD
+  labs(
+    y = expression(log[2]*"FC"),
+    x = NULL,
+    color = "Log2 FC"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 40),
+    axis.text.y = element_text(size = 40),
+    axis.title.y = element_text(size = 32),
+    legend.position = "none",
+    text = element_text(family = "ssp")
+  )
+
+
+ggsave("/Users/personal/Desktop/ICELL 10X paper/Figures with introns/icell_pseudobulk_new.png", plot = p, width = 7, height = 5, dpi = 300)
+```
+
+# 10X pseudobulk
+```{r}
+pseudo.10x <- AggregateExpression(x, assays = "RNA", slot = "counts", return.seurat = T, group.by = c("sample", "condition", "annot_fig"))
+
+# Raw counts matrix
+counts <- GetAssayData(pseudo.10x, slot = "counts")
+
+# Cell (pseudobulk sample) names look like: "sample_condition_celltype"
+cell_names <- colnames(counts)
+
+# Parse metadata from cell names
+meta <- as.data.frame(do.call(rbind, strsplit(cell_names, "_")))
+colnames(meta) <- c("sample", "condition", "cell_type")
+meta$group <- cell_names
+rownames(meta) <- cell_names
+```
+```{r}
+results_list <- list()
+
+for (ct in unique(meta$cell_type)) {
+  message("Running DE for cell type: ", ct)
+  
+  keep_cells <- meta$cell_type == ct
+  counts_ct <- counts[, keep_cells]
+  meta_ct <- meta[keep_cells, ]
+
+  # Skip if < 2 samples per condition
+  if (length(unique(meta_ct$condition)) < 2 || min(table(meta_ct$condition)) < 2) next
+
+  dds <- DESeqDataSetFromMatrix(
+    countData = counts_ct,
+    colData = meta_ct,
+    design = ~ condition
+  )
+
+  # Filter low counts
+  keep_genes <- rowSums(counts(dds)) > 10
+  dds <- dds[keep_genes, ]
+
+  dds <- DESeq(dds)
+  res <- results(dds, contrast = c("condition", "nicm", "donor"))
+  
+  res_df <- as.data.frame(res)
+  res_df$gene <- rownames(res_df)
+  res_df$cell_type <- ct
+
+  results_list[[ct]] <- res_df
+}
+```
+```{r}
+# Merge all DE results
+pseudobulk_de <- do.call(rbind, results_list)
+pseudobulk_de$significance_fc <- ifelse(abs(pseudobulk_de$log2FoldChange) > 0.5, "FC > 0.5", "FC ≤ 0.5")
+pseudobulk_de <- subset(pseudobulk_de, !cell_type %in% c("Proliferating", "Smooth muscle cell", "Neutrophil"))
+
+p <- ggplot(pseudobulk_de, aes(x = cell_type, y = log2FoldChange, color = significance_fc)) +
+  geom_jitter(width = 0.3, alpha = 0.8, size = 0.5) +
+  scale_color_manual(values = c("FC > 0.5" = "red", "FC ≤ 0.5" = "gray")) +
+  coord_cartesian(ylim = c(-10, 10)) +
+  theme_classic() +  # ← USE THIS INSTEAD
+  labs(
+    y = expression(log[2]*"FC"),
+    x = NULL,
+    color = "Log2 FC"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 40),
+    axis.text.y = element_text(size = 40),
+    axis.title.y = element_text(size = 32),
+    legend.position = "none",
+    text = element_text(family = "ssp")
+  )
+
+ggsave("/Users/haewonshin/Desktop/ICELL 10X paper/Figures_from_R/DEG/10x_pseudobulk.png", plot = p, width = 7, height = 5, dpi = 300)
+```
+
+
+# Dot plot of canonical genes
+```{r}
+Idents(icell) <- "annot_fig"
+celltypes <- levels(Idents(icell))
+celltypes <- celltypes[celltypes != "Proliferating"]
+sorted <- sort(celltypes)
+idents <- as.character(Idents(icell))
+keep <- idents %in% sorted
+icell <- subset(icell, cells = WhichCells(icell)[keep])
+icell <- SetIdent(icell, value = factor(Idents(icell), levels = sorted))
+features = c("CD3E", "RGS5", "FCGR3A", "KIT", "C1QA", "CCL21", "DCN", "VWF", "LEPR", "RYR2")
+
+dot <- DotPlot(icell, features = features) + 
+  theme(
+    text = element_text(family = "ssp"),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 40),
+    axis.title.x = element_text(size = 40),
+    axis.text.y = element_text(size = 40),
+    axis.title.y = element_text(size = 40),
+    legend.text = element_text(size = 30),    # smaller legend text
+    legend.title = element_text(size = 30)
+  )
+ggsave("/Users/haewonshin/Desktop/ICELL 10X paper/Figures_from_R/DEG/icell_canonical_genes.png", plot = dot, width = 7, height = 5, dpi = 300)
+```
+```{r}
+Idents(x) <- "annot_fig"
+celltypes <- levels(Idents(x))
+celltypes <- celltypes[celltypes != c("Proliferating", "Neutrophil")]
+sorted <- sort(celltypes)
+idents <- as.character(Idents(x))
+keep <- idents %in% sorted
+x <- subset(x, cells = WhichCells(x)[keep])
+x <- SetIdent(x, value = factor(Idents(x), levels = sorted))
+features = c("CD3E", "RGS5", "FCGR3A", "KIT", "C1QA", "CCL21", "DCN", "VWF", "LEPR", "RYR2")
+
+dot <- DotPlot(x, features = features) + 
+  theme(
+    text = element_text(family = "ssp"),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 40),
+    axis.title.x = element_text(size = 40),
+    axis.text.y = element_text(size = 40),
+    axis.title.y = element_text(size = 40),
+    legend.text = element_text(size = 30),    # smaller legend text
+    legend.title = element_text(size = 30)
+  )
+ggsave("/Users/haewonshin/Desktop/ICELL 10X paper/Figures_from_R/DEG/10x_canonical_genes.png", plot = dot, width = 7, height = 5, dpi = 300)
+```
+
+
+
+
+# Venn diagram
+```{r}
+# Upregulated genes
+up_icell <- markers.icell %>%
+  filter(p_val_adj < 0.05 & avg_log2FC > 0.25) %>%
+  pull(gene)
+
+up_10x <- markers.10x %>%
+  filter(p_val_adj < 0.05 & avg_log2FC > 0.25) %>%
+  pull(gene)
+
+# Downregulated genes
+down_icell <- markers.icell %>%
+  filter(p_val_adj < 0.05 & avg_log2FC < -0.25) %>%
+  pull(gene)
+
+down_10x <- markers.10x %>%
+  filter(p_val_adj < 0.05 & avg_log2FC < -0.25) %>%
+  pull(gene)
+
+
+
+p1 <- ggvenn(
+  list(
+    "ICELL" = up_icell,
+    "10X" = up_10x
+  ),
+  fill_color = c("tomato", "orange"),
+  stroke_size = 0.5,
+  set_name_size = 20,
+  text_size = 20,
+  show_percentage = FALSE
+) + 
+  theme(text = element_text(family = "ssp"))
+
+p2 <- ggvenn(
+  list(
+    "ICELL" = down_icell,
+    "10X" = down_10x
+  ),
+  fill_color = c("steelblue", "skyblue"),
+  stroke_size = 0.5,
+  set_name_size = 20,
+  text_size = 20,
+  show_percentage = FALSE
+) + 
+  theme(text = element_text(family = "ssp"))
+
+ggsave("./figures/venn_upregulated.png", plot = p1, width = 6, height = 6, dpi = 300)
+ggsave("./figures/venn_downregulated.png", plot = p2, width = 6, height = 6, dpi = 300)
+```
+
+
+# Calculate DE genes by cell type
+# Venn diagram
+```{r}
+# Fibroblasts
+fb.icell <- read.csv("./pseudobulk/marker_tables/icell fb.csv", header = TRUE) %>%
+  filter(p_val_adj < 0.05 & avg_log2FC > 0.25) %>%
+  pull(gene)
+
+fb.10x <- read.csv("./pseudobulk/marker_tables/10x fibro.csv", header = TRUE) %>%
+  filter(p_val_adj < 0.05 & avg_log2FC > 0.25) %>%
+  pull(X)
+
+
+fb <- ggvenn(
+  list(
+    "ICELL" = fb.icell,
+    "10X" = fb.10x
+  ),
+  fill_color = c("tomato", "orange"),
+  stroke_size = 0.5,
+  set_name_size = 20,
+  text_size = 20,
+  show_percentage = FALSE
+) + 
+  theme(text = element_text(family = "ssp"))
+```
+
+
+```{r}
+# myeloid
+mac.icell <- read.csv("./pseudobulk/marker_tables/icell myeloid.csv", header = TRUE) %>%
+  filter(p_val_adj < 0.05 & avg_log2FC > 0.25) %>%
+  pull(X)
+
+mac.10x <- read.csv("./pseudobulk/marker_tables/10x myeloid.csv", header = TRUE) %>%
+  filter(p_val_adj < 0.05 & avg_log2FC > 0.25) %>%
+  pull(X)
+
+m <- ggvenn(
+  list(
+    "ICELL" = mac.icell,
+    "10X" = mac.10x
+  ),
+  fill_color = c("steelblue", "skyblue"),
+  stroke_size = 0.5,
+  set_name_size = 20,
+  text_size = 20,
+  show_percentage = FALSE
+) + 
+  theme(text = element_text(family = "ssp"))
+
+ggsave("./venn_mac.png", plot = m, width = 6, height = 6, dpi = 300)
+```
+```{r}
+# cm
+cm.icell <- read.csv("./pseudobulk/marker_tables/icell cm.csv", header = TRUE) %>%
+  filter(p_val_adj < 0.05 & avg_log2FC > 0.25) %>%
+  pull(X)
+
+cm.10x <- read.csv("./pseudobulk/marker_tables/10x cm.csv", header = TRUE) %>%
+  filter(p_val_adj < 0.05 & avg_log2FC > 0.25) %>%
+  pull(X)
+
+cm <- ggvenn(
+  list(
+    "ICELL" = cm.icell,
+    "10X" = cm.10x
+  ),
+  fill_color = c("pink", "purple"),
+  stroke_size = 0.5,
+  set_name_size = 20,
+  text_size = 20,
+  show_percentage = FALSE
+) + 
+  theme(text = element_text(family = "ssp"))
+
+ggsave("./venn_cm.png", plot = cm, width = 6, height = 6, dpi = 300)
+```
+

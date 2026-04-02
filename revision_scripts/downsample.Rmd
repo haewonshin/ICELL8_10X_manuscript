@@ -1,0 +1,208 @@
+```{r}
+library(dplyr)
+library(Seurat)
+library(scDblFinder)
+library(decontX)
+library(patchwork)
+library(ggplot2)
+library(harmony)
+library(Matrix)
+library(BiocParallel)
+library(paletteer)
+library(showtext)
+```
+
+# Start with Seurat object
+```{r}
+obj.icell <- readRDS("/storage2/fs1/klavine/Active/Haewon/Exp020_ICELL_paper_revisions/icell preQC.rds")
+obj.10X <- readRDS("/storage2/fs1/klavine/Active/Haewon/nicm_donor/10x/objects/preQC.rds")
+```
+# Remove ICM
+```{r}
+table(obj.icell@meta.data[["condition"]])
+Idents(obj.icell) <- "condition"
+obj.icell <- subset(obj.icell, idents = "icm", invert = TRUE)
+```
+
+
+# Extract count matrix
+```{r}
+counts.icell <- obj.icell@assays$RNA@counts
+counts.10X <- obj.10X@assays$RNA@counts
+```
+
+# Determine target depth
+```{r}
+reads.10X <- colSums(counts.10X)
+reads.icell <- colSums(counts.icell)
+target.fraction <- mean(reads.10X) / mean(reads.icell) 
+```
+
+```{r}
+downsample.reads <- function(count.mat, fraction) {
+  new.mat <- apply(count.mat, 2, function(counts) {
+    total <- sum(counts)
+    if (total == 0) return(counts)
+
+    # stochastic target depth
+    target_total <- rbinom(1, total, fraction)
+
+    # probabilities per gene
+    prob <- counts / total
+    as.vector(rmultinom(1, target_total, prob))
+  })
+  rownames(new.mat) <- rownames(count.mat)
+  return(new.mat)
+}
+
+icell.down <- downsample.reads(counts.icell, target.fraction)
+```
+
+```{r}
+saveRDS(icell.down, "./downsampled ICELL count matrix.rds")
+```
+
+```{r}
+rownames(icell.down) <- rownames(counts.icell)
+colnames(icell.down) <- colnames(counts.icell)
+object.down <- CreateSeuratObject(counts = icell.down, min.cells = 3, min.features = 300)
+```
+
+
+```{r}
+# Add feature labels for % mito, % ribo, and % hemoglobin
+object.down <- PercentageFeatureSet(object.down, pattern = "^MT-", col.name = "percent.mt")
+object.down <- PercentageFeatureSet(object.down, pattern = "^RPS|^RPL", col.name = "percent.ribo")
+object.down <- PercentageFeatureSet(object.down, pattern = "^HB[AB]", col.name = "percent.hemo")
+```
+
+# Save downsampled object
+```{r}
+saveRDS(object.down, "./downsample/downsampled ICELL object.rds", compress = FALSE)
+```
+
+# Formatting
+```{r}
+font_add_google("Source Sans Pro", "ssp")  # "ssp" is the alias
+showtext_auto()
+```
+```{r}
+colour_palette <- c(
+  "#D73027",  # strong red
+  "#FC8D59",  # coral pink
+  "#1B7837",  # deep green
+  "#66BD63",  # light green
+  "#4575B4",  # bright blue
+  "#313695"   # dark indigo-blue
+)
+```
+
+
+# Violin plots
+```{r}
+p1 <- VlnPlot(object.down, features = "nFeature_RNA", pt.size = 0) + 
+  ggtitle("Number of features per cell") +
+  scale_fill_manual(values = colour_palette)
+
+ggsave(file.path("./downsample/nfeature.png"), plot = p1, width = 6, height = 4, dpi = 600)
+```
+
+# Calculate number of counts per cell
+```{r}
+# Confirm with prism file that number of cells is accurate
+obj.icell@meta.data %>%
+  group_by(sample) %>%
+  summarise(counts_per_sample = mean(nCount_RNA))
+
+obj.10X@meta.data %>%
+  group_by(sample) %>%
+  summarise(counts_per_sample = mean(nCount_RNA))
+
+# Downsampled
+object.down@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(counts_per_sample = mean(nCount_RNA))
+```
+# Calculate number of features per cell
+```{r}
+# 10X
+obj.10X@meta.data %>%
+  group_by(sample) %>%
+  summarise(avg_features_per_sample = mean(nFeature_RNA))
+
+# ICELL
+obj.icell@meta.data %>%
+  group_by(sample) %>%
+  summarise(avg_features_per_sample = mean(nFeature_RNA))
+
+# Downsampled ICELL
+object.down@meta.data %>%
+  group_by(orig.ident) %>%
+  summarise(avg_features_per_sample = mean(nFeature_RNA))
+```
+
+# Look at biotype diversity
+```{r}
+gene_info <- read.table(file = "/storage2/fs1/klavine/Active/Haewon/Human_ICELL_raw_data/Human_snRNA_seq_samples/D1118/analyze/gene_info.csv", sep = ",", header = TRUE)
+object <- object.down
+
+# Get most abundant biotypes from all of the features in the object
+counts <- GetAssayData(object, slot = "counts")
+allFeatures <- rownames(counts)[Matrix::rowSums(counts)>0] # Get nonzero features
+allFeatures <- gene_info[gene_info$Gene_Name %in% allFeatures, ] # Get biotypes for the nonzero features
+allFeatures <- allFeatures[!duplicated(allFeatures$Gene_Name), ] # Remove duplicates
+allFeatures.nc <- allFeatures %>% dplyr::count(Gene_Biotype) # Count number of occurrences of each biotype
+allFeatures.nc <- allFeatures.nc[order(-allFeatures.nc$n), ] # Order, descending
+```
+```{r}
+# Keep the top 10 most frequent; lump the others into "Other"
+allFeatures.top10 <- allFeatures.nc %>%
+  mutate(Gene_Biotype = ifelse(row_number() > 10, "Other", as.character(Gene_Biotype))) %>%
+  group_by(Gene_Biotype) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  arrange(desc(n)) %>%
+  mutate(Gene_Biotype = factor(Gene_Biotype, levels = c(setdiff(unique(Gene_Biotype), "Other"), "Other"))) %>%
+  arrange(factor(Gene_Biotype, levels = c(setdiff(unique(Gene_Biotype), "Other"), "Other")), desc(n))
+
+# Calculate percentages for each Gene_Biotype
+allFeatures.top10 <- allFeatures.top10 %>%
+  mutate(percentage = n / sum(n) * 100)
+
+legend_labels <- paste0(allFeatures.top10$Gene_Biotype, " (", round(allFeatures.top10$percentage, 1), "%)")
+
+
+```
+```{r}
+# Colour palette
+palette <- c(
+  "#FF6F61", # Soft Coral - protein coding
+  "#6B8E23", # Olive Green - pseudogene
+  "#1F77B4", # Vibrant Blue - lincrna
+  "#F4A300", # Golden Yellow - antisense
+  "#D16F8D", # Muted Rose - unprocessed
+  "#2E8B57", # Sea Green - snRNA
+  "#FFD700", # Warm Yellow - miRNA
+  "#4B9CD3", # Sky Blue - miscRNA
+  "#9E9AC7", # Lavender Gray - TEC
+  "#FF9E9D", # Pastel Peach - sense intronic
+  "#A1D6E1"  # Soft Cyan - other
+)
+```
+
+```{r}
+# Create the pie chart without percentages around the pie
+p1 <- ggplot(allFeatures.top10, aes(x = "", y = n, fill = Gene_Biotype)) +
+  geom_bar(stat = "identity") +
+  coord_polar("y", start = 0) +                             
+  scale_fill_manual(values = palette, labels = legend_labels) +
+  theme_void() +
+  theme(
+    legend.title = element_blank(),
+    text = element_text(family = "ssp"),
+    panel.background = element_rect(fill = "white", color = "white"), # Set background to white
+    plot.background = element_rect(fill = "white", color = "white")
+    )
+
+ggsave(file.path("./piechart_biotypes_hvg_downsampled.png"), plot = p1, width = 5, height = 3.5, dpi = 600)
+```
+
