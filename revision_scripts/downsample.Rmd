@@ -100,11 +100,17 @@ colour_palette <- c(
 
 # Violin plots
 ```{r}
-p1 <- VlnPlot(object.down, features = "nFeature_RNA", pt.size = 0) + 
-  ggtitle("Number of features per cell") +
+p1 <- VlnPlot(object.down, features = "nCount_RNA", pt.size = 0) + 
+  ggtitle("Number of counts per cell") +
   scale_fill_manual(values = colour_palette)
 
-ggsave(file.path("./downsample/nfeature.png"), plot = p1, width = 6, height = 4, dpi = 600)
+ggsave(
+  "/Users/haewonshin/Library/CloudStorage/OneDrive-WashingtonUniversityinSt.Louis/obsidian/my_vault/lab/experiments/01_icell_10x_paper_revisions/figures/downsampled_nCount_vln.pdf",
+  plot = p1,
+  width = 10,
+  height = 6,
+  device = cairo_pdf
+)
 ```
 
 # Calculate number of counts per cell
@@ -143,11 +149,11 @@ object.down@meta.data %>%
 
 # Look at biotype diversity
 ```{r}
-gene_info <- read.table(file = "/storage2/fs1/klavine/Active/Haewon/Human_ICELL_raw_data/Human_snRNA_seq_samples/D1118/analyze/gene_info.csv", sep = ",", header = TRUE)
+gene_info <- read.table(file = "/Volumes/klavine/Active/Haewon/Human_ICELL_raw_data/Human_snRNA_seq_samples/D1118/analyze/gene_info.csv", sep = ",", header = TRUE)
 object <- object.down
 
 # Get most abundant biotypes from all of the features in the object
-counts <- GetAssayData(object, slot = "counts")
+counts <- GetAssayData(object.down, slot = "counts")
 allFeatures <- rownames(counts)[Matrix::rowSums(counts)>0] # Get nonzero features
 allFeatures <- gene_info[gene_info$Gene_Name %in% allFeatures, ] # Get biotypes for the nonzero features
 allFeatures <- allFeatures[!duplicated(allFeatures$Gene_Name), ] # Remove duplicates
@@ -191,18 +197,17 @@ palette <- c(
 
 ```{r}
 # Create the pie chart without percentages around the pie
-p1 <- ggplot(allFeatures.top10, aes(x = "", y = n, fill = Gene_Biotype)) +
+p2 <- ggplot(allFeatures.top10, aes(x = "", y = n, fill = Gene_Biotype)) +
   geom_bar(stat = "identity") +
   coord_polar("y", start = 0) +                             
   scale_fill_manual(values = palette, labels = legend_labels) +
   theme_void() +
   theme(
     legend.title = element_blank(),
-    text = element_text(family = "ssp"),
     panel.background = element_rect(fill = "white", color = "white"), # Set background to white
     plot.background = element_rect(fill = "white", color = "white")
     )
 
-ggsave(file.path("./piechart_biotypes_hvg_downsampled.png"), plot = p1, width = 5, height = 3.5, dpi = 600)
+ggsave(file.path("/Users/haewonshin/Library/CloudStorage/OneDrive-WashingtonUniversityinSt.Louis/obsidian/my_vault/lab/experiments/01_icell_10x_paper_revisions/figures/downsampled_biotype_piechart.pdf"), plot = p2, width = 10, height = 6, dpi = 600)
 ```
 
