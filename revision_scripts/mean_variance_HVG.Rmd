@@ -18,8 +18,8 @@ options(future.globals.maxSize = 8000*1024^2)
 
 # Start with Seurat object
 ```{r}
-obj.10x <- readRDS("/storage2/fs1/klavine/Active/Haewon/ICELL_10X_paper_revisions/objects/10X_clustered.rds")
-obj.icell <- readRDS("/storage2/fs1/klavine/Active/Haewon/ICELL_10X_paper_revisions/objects/ICELL_clustered_no_introns.rds")
+obj.10x <- readRDS("/Volumes/klavine/Active/Haewon/icell_10x_paper_revisions/objects/10X_clustered.rds")
+obj.icell <- readRDS("/Volumes/klavine/Active/Haewon/icell_10x_paper_revisions/objects/ICELL_clustered_no_introns.rds")
 ```
 
 # Get per gene stats for different cell types
@@ -57,10 +57,6 @@ p1 <- ggplot(both, aes(mean, var, color=platform)) +
   scale_x_log10() +
   scale_y_log10()
 
-ggsave(file.path("/storage2/fs1/klavine/Active/Haewon/ICELL_10X_paper_revisions/mean_variance_HVG/mean-variance_myeloid_plot.png"), plot = p1, width = 6, height = 4, dpi = 600)
-```
-
-```{r}
-
+ggsave(file.path("/Users/haewonshin/Library/CloudStorage/OneDrive-WashingtonUniversityinSt.Louis/obsidian/my_vault/lab/experiments/01_icell_10x_paper_revisions/figures/mean_variance_myeloid.pdf"), plot = p1, width = 8, height = 5.5, dpi = 600)
 ```
 

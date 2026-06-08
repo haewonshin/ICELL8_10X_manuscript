@@ -6,18 +6,17 @@ library(ggplot2)
 library(harmony)
 library(Matrix)
 library(pheatmap)
-
 ```
 
 # Start with Seurat object
 ```{r}
-query_icell <- readRDS("/storage2/fs1/klavine/Active/Haewon/nicm_donor/ref_mapping/query_icell.rds")
-query_10x <- readRDS("/storage2/fs1/klavine/Active/Haewon/nicm_donor/ref_mapping/query_10x.rds")
+query_icell <- readRDS("/Volumes/klavine/Active/Haewon/icell_10x_comparison_nicm_donor/ref_mapping/query_icell.rds")
+query_10x <- readRDS("/Volumes/klavine/Active/Haewon/icell_10x_comparison_nicm_donor/ref_mapping/query_10x.rds")
 ```
 
 # Get average prediction score
 ```{r}
-meta <- query_icell@meta.data
+meta <- query_10x@meta.data
 
 avg.scores <- meta %>%
   group_by(predicted.celltype) %>%
@@ -59,5 +58,7 @@ p <- pheatmap(
   display_numbers = TRUE,
   number_format = "%.2f"
 )
+
+ggsave(file.path("/Users/haewonshin/Library/CloudStorage/OneDrive-WashingtonUniversityinSt.Louis/obsidian/my_vault/lab/experiments/01_icell_10x_paper_revisions/figures/10x_to_icell_heatmap.pdf"), plot = p, width = 10, height = 6, dpi = 600)
 ```
 

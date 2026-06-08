@@ -1,6 +1,7 @@
 ```{r}
 library(msigdbr)
 library(clusterProfiler)
+library(org.Hs.eg.db)
 library(enrichplot)
 library(dplyr)
 library(Seurat)
@@ -9,9 +10,9 @@ library(ggplot2)
 
 # Load in DE genes
 ```{r}
-de <- read.csv("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/common_fibroblast.csv", header = TRUE, row.names = 1) # Import genes
+de <- read.csv("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/icell_unique_fibroblast.csv", header = TRUE, row.names = 1) # Import genes
 
-gene_df <- bitr(de$x,
+gene_df <- bitr(rownames(de),
                 fromType="SYMBOL",
                 toType="ENTREZID",
                 OrgDb=org.Hs.eg.db)
@@ -29,8 +30,8 @@ enrich <- enricher(
 
 ```{r}
 p1 <- dotplot(enrich, showCategory = 15)
-ggsave("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/gene_set/hallmark_common_fibroblast.png", plot = p1, width = 10, height = 6, dpi = 300)
-```
 
+ggsave(file.path("/Users/haewonshin/Library/CloudStorage/OneDrive-WashingtonUniversityinSt.Louis/obsidian/my_vault/lab/experiments/01_icell_10x_paper_revisions/figures/hallmark_icell_fibroblast.pdf"), plot = p1, width = 10, height = 6, dpi = 600)
+```
 
 

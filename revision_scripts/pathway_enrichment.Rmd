@@ -43,7 +43,7 @@ write.csv(de.icell.unique, "/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revis
 
 # Pathway analysis
 ```{r}
-de <- read.csv("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/DEGs/icell_unique_myeloid.csv", header = TRUE, row.names = 1) # Import genes
+de <- read.csv("/Volumes/klavine/Active/Haewon/icell_10x_paper_revisions/DEGs/common_fibroblast.csv", header = TRUE, row.names = 1) # Import genes
 ```
 
 # Set global memory
@@ -56,7 +56,7 @@ options(future.globals.maxSize = 8000*1024^2)
 
 # Convert to Entrez ID
 ```{r}
-gene_df <- bitr(rownames(de),
+gene_df <- bitr(de$x,
                 fromType="SYMBOL",
                 toType="ENTREZID",
                 OrgDb=org.Hs.eg.db)
@@ -70,7 +70,13 @@ go <- enrichGO(gene_df$ENTREZID,
 ```
 ```{r}
 p1 <- dotplot(go)
-ggsave("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/pathway/icell_unique_DEG_pathways/myeloid_GO_dotplot.png", plot = p1, width = 10, height = 6, dpi = 300)
+ggsave(
+  "/Users/haewonshin/Library/CloudStorage/OneDrive-WashingtonUniversityinSt.Louis/obsidian/my_vault/lab/experiments/01_icell_10x_paper_revisions/figures/GO_shared_fibroblast.pdf",
+  plot = p1,
+  width = 10,
+  height = 6,
+  device = cairo_pdf
+)
 ```
 
 
@@ -82,7 +88,13 @@ kegg <- enrichKEGG(gene = gene_df$ENTREZID,
 ```
 ```{r}
 p1 <- dotplot(kegg)
-ggsave("/Volumes/klavine/Active/Haewon/ICELL_10X_paper_revisions/pathway/icell_unique_DEG_pathways/myeloid_KEGG_dotplot.png", plot = p1, width = 10, height = 6, dpi = 300)
+ggsave(
+  "/Users/haewonshin/Library/CloudStorage/OneDrive-WashingtonUniversityinSt.Louis/obsidian/my_vault/lab/experiments/01_icell_10x_paper_revisions/figures/KEGG_shared_fibroblast.pdf",
+  plot = p1,
+  width = 10,
+  height = 6,
+  device = cairo_pdf
+)
 ```
 
 
