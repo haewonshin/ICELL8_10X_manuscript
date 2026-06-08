@@ -418,3 +418,38 @@ fb <- ggvenn(
 ) + 
   theme(text = element_text(family = "ssp"))
 ```
+
+
+
+# Venn diagrams in pdf form
+```{r}
+library(ggvenn)
+
+# Create list with counts encoded as elements
+set1 <- paste0("A", 1:52)
+shared <- paste0("S", 1:43)
+set2_unique <- paste0("B", 1:74)
+
+list_data <- list(
+  Set1 = c(set1, shared),
+  Set2 = c(set2_unique, shared)
+)
+
+# Plot
+v <- ggvenn(
+  list_data,
+  fill_color = c("pink", "purple"),
+  stroke_size = 0.5,
+  show_percentage = FALSE,
+  set_name_size = 0
+)
+
+ggsave(
+   "/Users/haewonshin/Library/CloudStorage/OneDrive-WashingtonUniversityinSt.Louis/obsidian/my_vault/lab/experiments/01_icell_10x_paper_revisions/figures/venn_9d_cardiomyocyte.pdf",
+  plot = v,
+  width = 2,
+  height = 1.5,
+  device = cairo_pdf
+)
+```
+
